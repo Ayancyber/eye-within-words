@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>THE EYE WITHIN WORDS — by ayan</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hint {
+    position: fixed; left: 28px; bottom: 24px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #9fb6d0; text-shadow: 0 1px 2px #000; pointer-events: none;
+    transition: opacity .4s; opacity: .85;
+  }
+  #panel {
+    position: fixed; left: 28px; top: 28px; padding: 18px 22px;
+    background: rgba(6,10,18,.92); border: 1px solid rgba(0,195,245,.35);
+    border-radius: 12px; color: #dbe7f3; font: 13px/1.7 -apple-system, sans-serif;
+    display: none; max-width: 480px; backdrop-filter: blur(8px);
+  }
+  #panel h1 { font-size: 15px; margin: 0 0 8px; color: #fff; }
+  #panel .k { display: inline-block; min-width: 58px; color: #7ad3ff; font-weight: 600; }
+  #panel .dim { color: #8aa3bd; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">H for controls · SPACE blink · Z zoom · C palette · R reshuffle · ESC close</div>
+<div id="panel"></div>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   1. QUOTES & VOCABULARY
+   ========================================================================== */
+const SIGNATURE_QUOTES = [
+  "we are made of stars","look beyond what you see","every thought leaves a trace",
+  "the universe lives within us","beauty exists in the details","we become what we believe",
+  "silence has its own language","nothing is ever truly invisible","your perception creates your world",
+  "the truth hides between the lines","every ending begins somewhere","consciousness observing itself",
+  "there is more than meets the eye","even darkness carries meaning","wonder is a form of intelligence",
+  "the world is written in patterns","what you seek is seeking you","everything is connected",
+  "look closer","stay curious"
+];
+const ADDITIONAL_POETIC_QUOTES = [
+  "light remembers where it has been","every question opens an unseen door","we are the universe becoming aware",
+  "in stillness the hidden becomes clear","meaning blooms where attention rests","time is a river of quiet revelations",
+  "beneath every surface lies another sky","words are the architecture of thought","to truly see is to be transformed",
+  "infinite worlds inside a single glance","memory is starlight traveling through mind","the observer and the observed are one",
+  "clarity arrives when the mind grows quiet","every heartbeat echoes across eternity","dreams are letters from the unseen self",
+  "curiosity is the compass of the soul","shadows only prove the presence of light","vision begins where certainty ends",
+  "all things are woven from the same light","listen to the quiet between your thoughts","awareness is the canvas of existence",
+  "every moment contains the whole of time","the eye reads what the heart remembers","patterns of light become living thought",
+  "seek the poetry hidden in plain sight","nothing seen is ever separate from you","thought is the brushstroke of reality",
+  "within the finite dwells the infinite","each breath is a quiet beginning","truth shines brightest in the dark"
+];
+const MEANINGFUL_SHORT_WORDS = [
+  "existence","perception","eternity","wonder","look closer","stay curious","consciousness",
+  "clarity","horizon","infinity","presence","silence","radiance","reflection","insight",
+  "empathy","mystery","serenity","awakening","harmony","cosmos","memory","origin","vision",
+  "truth","light","dream","spirit","essence","timeless","intimate","witness","observer",
+  "vivid","lucid","transcend","illuminate","connect","breathe","imagine","perceive","discover",
+  "believe","focus"
+];
+const PUPIL_DARK_WORDS = [
+  "within","silence","origin","eternity","mystery","depth","unseen","essence","center",
+  "stillness","cosmos","infinite","shadow","secret","truth","existence","source","soul",
+  "awareness","void","core","unknown","singularity","intimate"
+];
+const HIGHLIGHT_WORDS = [
+  "light","clarity","wonder","truth","shine","vision","lucid","spark","pure","awake",
+  "vivid","radiance","star","clear","see","glow","illuminate","ayan"
+];
+
+// The artist's signature, woven through the piece
+const SIGNATURE_NAME = "ayan";
+
+// Seeded RNG (mulberry32) so `R` regeneration is deterministic per seed
+function makeRNG(seed) {
+  let s = seed >>> 0;
+  return {
+    next() { s |= 0; s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296; },
+    range(a, b) { return a + this.next() * (b - a); },
+    int(a, b) { return Math.floor(this.range(a, b + 1)); },
+    choice(arr) { return arr[Math.floor(this.next() * arr.length)]; }
+  };
+}
+
+function generateMeaningfulQuote(rng, mode = "mixed") {
+  if (mode === "highlight") return rng.choice(HIGHLIGHT_WORDS);
+  if (mode === "pupil")     return rng.choice(PUPIL_DARK_WORDS);
+  if (mode === "short")     return rng.choice(MEANINGFUL_SHORT_WORDS);
+  if (mode === "quote")     return rng.next() < 0.48
+      ? rng.choice(SIGNATURE_QUOTES) : rng.choice(ADDITIONAL_POETIC_QUOTES);
+  const r = rng.next();
+  if (r < 0.40) return rng.choice(SIGNATURE_QUOTES);
+  if (r < 0.76) return rng.choice(ADDITIONAL_POETIC_QUOTES);
+  return rng.choice(MEANINGFUL_SHORT_WORDS);
+}
+
+/* ==========================================================================
+   2. PALETTES
+   ========================================================================== */
+const PALETTES = [
+  { name: "Midnight Poetry — Cyan, Electric Blue & Violet",
+    canvas_bg: "#03060d",
+    bg_field_dark: ["#243a60","#2a426c","#2e325c","#203456","#324a76"],
+    bg_field_orbital: ["#3e5e94","#4a5290","#38568a","#506ea4"],
+    sclera_colors: ["#f4f8ff","#f2ece0","#d0e0f4","#b8d4f2","#e4ecf8"],
+    iris_outer: ["#204eaf","#4434a8","#186ca8","#523ab6"],
+    iris_mid:   ["#00defc","#16eeda","#2d9bff","#7652f8","#00c6d2","#44c3ff"],
+    iris_inner: ["#87faff","#55ebff","#b9f5ff","#a28aff"],
+    iris_alt:   ["#8e4efc","#00f2da","#30b2ff","#b269ff"],
+    pupil_words:["#1c2c4e","#22345a","#2a2652","#182644"],
+    highlight_words:["#ffffff","#def8ff","#bef0ff"],
+    eyelid_rim: ["#e8f4ff","#c4defa","#accef5","#dae8fc"],
+    eyelid_sheet:["#6288c0","#6c62ac","#5476ac","#7c9cd0"],
+    accent: "#00c3f5" },
+  { name: "Bioluminescent Verse — Turquoise, Emerald & Deep Navy",
+    canvas_bg: "#03090c",
+    bg_field_dark: ["#1e424c","#244a56","#1c3a48","#2a525c"],
+    bg_field_orbital: ["#366c76","#3e7680","#306070"],
+    sclera_colors: ["#f2faf8","#eeebe0","#cae4e2","#b2d8dc"],
+    iris_outer: ["#106066","#184c80","#0e705c","#264086"],
+    iris_mid:   ["#00e6b8","#14f0d4","#26bcee","#10d298"],
+    iris_inner: ["#8eecff","#62f8f2","#b6ffee","#52eec6"],
+    iris_alt:   ["#00c6f5","#34f8a8","#1ae0da","#70fccc"],
+    pupil_words:["#162e36","#1c3642","#1a2a3e"],
+    highlight_words:["#ffffff","#defff8","#bcf8f0"],
+    eyelid_rim: ["#e2f8f4","#bce4de","#a4d4d0"],
+    eyelid_sheet:["#54969c","#4a7e90","#66a6aa"],
+    accent: "#00d7af" },
+  { name: "Astral Manuscript — Amethyst, Starlight & Indigo",
+    canvas_bg: "#06050e",
+    bg_field_dark: ["#302c58","#383262","#2a345c","#3e366c"],
+    bg_field_orbital: ["#524a8a","#4a568e","#5e5298"],
+    sclera_colors: ["#f8f5fe","#f2ece4","#d8d4ee","#c0cef2"],
+    iris_outer: ["#4e2a98","#6a248e","#30389e","#5c2280"],
+    iris_mid:   ["#b058fc","#7c70ff","#da54e4","#48aeff"],
+    iris_inner: ["#ecbcff","#c4deff","#f8ccff","#a2ecff"],
+    iris_alt:   ["#5cb6ff","#e86cfa","#9a7cff","#f490ec"],
+    pupil_words:["#241c44","#2c2250","#1e264a"],
+    highlight_words:["#ffffff","#f5eeff","#daf2ff"],
+    eyelid_rim: ["#f0e6ff","#d0c4f2","#baccf8"],
+    eyelid_sheet:["#806eba","#6878b2","#907cc6"],
+    accent: "#a85cf8" }
+];
+
+const hexToRgb = (h) => {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const rgba = (h, a) => { const [r,g,b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; };
+const shadeHex = (h, k) => {
+  const [r,g,b] = hexToRgb(h);
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
+  return `rgb(${c(r)},${c(g)},${c(b)})`;
+};
+
+/* ==========================================================================
+   3. GEOMETRY
+   ========================================================================== */
+function calcGeometry(screenW, screenH) {
+  let canvasW = Math.round(screenW * 1.55);
+  let canvasH = Math.round(screenH * 1.55);
+  if (canvasW % 2) canvasW++;
+  if (canvasH % 2) canvasH++;
+  const centerX = canvasW / 2, centerY = canvasH / 2;
+  const scale = Math.min(screenW / 1512, screenH / 982) * 1.18;
+  const wideViewW = canvasW * 0.82, wideViewH = canvasH * 0.82;
+  const eyeHalfW = wideViewW * 0.455;
+  const eyeHalfH = wideViewH * 0.285;
+  const irisRadius = eyeHalfH * 1.02;
+  const pupilRadius = irisRadius * 0.34;
+  return { screenW, screenH, canvasW, canvasH, centerX, centerY,
+           eyeHalfW, eyeHalfH, irisRadius, pupilRadius, scale };
+}
+
+// u: normalized [-1, 1]; returns {upper, lower} y offsets relative to eye center (+y = down)
+function evalEyelid(u, openness, g) {
+  u = Math.max(-1, Math.min(1, u));
+  const env = Math.pow(Math.max(0, 1 - u*u), 0.76);
+  const upperArch = 1 - 0.11*u - 0.06*u*u;
+  const lowerArch = 1 + 0.13*u - 0.05*u*u;
+  let yUp = -g.eyeHalfH * 1.04 * env * upperArch;
+  let yLo =  g.eyeHalfH * 0.88 * env * lowerArch;
+  const medial = 0.09 * g.eyeHalfH * Math.exp(-Math.pow((u + 0.89) / 0.20, 2));
+  const lateral = -0.06 * g.eyeHalfH * Math.exp(-Math.pow((u - 0.86) / 0.25, 2));
+  const corner = medial + lateral;
+  yUp += corner; yLo += corner;
+  const yClosed = g.eyeHalfH * 0.16 * env + corner;
+  const t = Math.max(0, Math.min(1, openness));
+  return {
+    upper: yClosed * (1 - t) + yUp * t,
+    lower: yClosed * (1 - t) + yLo * t
+  };
+}
+
+function evalFieldStreamlineY(x, baseY, g) {
+  const u = (x - g.centerX) / g.eyeHalfW;
+  const bell = Math.exp(-0.5 * Math.pow(u / 0.76, 2));
+  const normY = Math.abs(baseY) / Math.max(1, g.eyeHalfH);
+  const distAtten = Math.exp(-normY / 1.85);
+  return g.centerY + baseY + baseY * 0.42 * bell * distAtten;
+}
+
+/* ==========================================================================
+   4. CANVAS HELPERS
+   ========================================================================== */
+function newCanvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
+  return c;
+}
+const ctxCache = new WeakMap();
+function cx(canvas) {
+  if (!ctxCache.has(canvas)) ctxCache.set(canvas, canvas.getContext("2d"));
+  return ctxCache.get(canvas);
+}
+
+const FONT_FAMILY = 'Optima, "Helvetica Neue", "Avenir Next", Arial, sans-serif';
+function fontStr(size, bold) {
+  return `${bold ? 700 : 400} ${Math.max(7, Math.round(size))}px ${FONT_FAMILY}`;
+}
+
+// Draw a word centered at (x,y), rotated by angleDeg
+function drawWord(target, text, x, y, size, angleDeg, fill, bold = false) {
+  const ctx = cx(target);
+  ctx.save();
+  ctx.translate(x, y);
+  if (Math.abs(angleDeg) > 0.45) ctx.rotate((angleDeg * Math.PI) / 180);
+  ctx.font = fontStr(size, bold);
+  ctx.fillStyle = fill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
+function measureText(target, text, size, bold) {
+  const ctx = cx(target);
+  ctx.save();
+  ctx.font = fontStr(size, bold);
+  const m = ctx.measureText(text);
+  ctx.restore();
+  return { width: m.width, ascent: m.actualBoundingBoxAscent || size * 0.7,
+           descent: m.actualBoundingBoxDescent || size * 0.3 };
+}
+
+// Prerender a rotated word into its own small canvas (for animated rim sprites)
+function createWordSprite(text, size, angleDeg, fill, bold) {
+  const tmp = newCanvas(8, 8);
+  const m = measureText(tmp, text, size, bold);
+  const pad = 4;
+  const w = m.width + pad * 2;
+  const h = m.ascent + m.descent + pad * 2;
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const rw = Math.ceil(w * cos + h * sin);
+  const rh = Math.ceil(w * sin + h * cos);
+  const c = newCanvas(rw, rh);
+  const ctx = cx(c);
+  ctx.translate(rw / 2, rh / 2);
+  ctx.rotate(rad);
+  ctx.font = fontStr(size, bold);
+  ctx.fillStyle = fill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 0, 0);
+  return c;
+}
+
+/* ==========================================================================
+   5. FULL-CANVAS WALL OF POETRY
+   ========================================================================== */
+function buildFieldLayer(g, rng, palette) {
+  const c = newCanvas(g.canvasW, g.canvasH);
+  const ctx = cx(c);
+  ctx.fillStyle = palette.canvas_bg;
+  ctx.fillRect(0, 0, g.canvasW, g.canvasH);
+
+  const rowSpacing = Math.max(16, 18 * g.scale);
+  const maxYExtent = g.canvasH * 0.54;
+  let rowIdx = 0;
+  for (let baseY = -maxYExtent; baseY <= maxYExtent; baseY += rowSpacing, rowIdx++) {
+    let fsize;
+    if (rowIdx % 4 === 0) fsize = Math.max(10, 12.8 * g.scale);
+    else if (rowIdx % 2 === 0) fsize = Math.max(9, 11.4 * g.scale);
+    else fsize = Math.max(8, 10.2 * g.scale);
+
+    let xCursor = 6 + rng.range(0, 18);
+    const bold = rowIdx % 5 === 0;
+
+    while (xCursor < g.canvasW - 8) {
+      const text = generateMeaningfulQuote(rng, "mixed");
+      const m = measureText(c, text, fsize, bold);
+      const w = m.width;
+      const gap = Math.max(10, 12 * g.scale);
+      const wx = xCursor + w * 0.5;
+      if (wx - w * 0.5 > g.canvasW) break;
+
+      const y0 = evalFieldStreamlineY(wx - 12, baseY, g);
+      const y1 = evalFieldStreamlineY(wx,      baseY, g);
+      const y2 = evalFieldStreamlineY(wx + 12, baseY, g);
+      const wy = y1;
+
+      if (wy >= -20 && wy <= g.canvasH + 20) {
+        const slope = (y2 - y0) / 24;
+        const angle = -(Math.atan(slope) * 180) / Math.PI;
+
+        const uRel = (wx - g.centerX) / g.eyeHalfW;
+        const vRel = (wy - g.centerY) / g.eyeHalfH;
+        const ell = Math.hypot(uRel * 0.88, vRel * 0.78);
+
+        const open = evalEyelid(uRel, 1.0, g);
+        const closed = evalEyelid(uRel, 0.0, g);
+        const dy = wy - g.centerY;
+
+        let colorHex, shade, alpha, useBold = bold;
+
+        if (Math.abs(uRel) <= 1.03 && dy >= open.upper - 46*g.scale && dy <= open.lower + 42*g.scale) {
+          // Eyelid / palpebral region
+          const dClosed = Math.abs(dy - closed.upper);
+          const dUp = Math.abs(dy - open.upper);
+          const dLo = Math.abs(dy - open.lower);
+          if (dClosed < 15 * g.scale) {
+            colorHex = rng.choice(palette.eyelid_rim); shade = 1.0; alpha = 0.99; useBold = true;
+          } else if (dUp < 24*g.scale || dLo < 22*g.scale) {
+            colorHex = rng.choice(palette.eyelid_rim); shade = 0.92;
+            alpha = rng.range(0.88, 0.98); useBold = true;
+          } else {
+            colorHex = rng.choice(palette.eyelid_sheet);
+            shade = Math.max(0.68, 1 - 0.25 * Math.abs(uRel));
+            alpha = rng.range(0.80, 0.94);
+          }
+        } else if (ell < 1.58) {
+          colorHex = rng.choice(palette.bg_field_orbital);
+          const t = Math.max(0, (ell - 1) / 0.58);
+          shade = 1 - 0.24 * t;
+          alpha = rng.range(0.80, 0.94);
+        } else {
+          colorHex = rng.choice(palette.bg_field_dark);
+          shade = 0.88 + 0.12 * Math.sin(uRel * 2 + vRel * 1.6);
+          alpha = rng.range(0.78, 0.93);
+        }
+
+        // Apply shade & alpha
+        const [rr,gg,bb] = hexToRgb(colorHex);
+        const fill = `rgba(${Math.min(255, rr*shade|0)},${Math.min(255, gg*shade|0)},${Math.min(255, bb*shade|0)},${alpha})`;
+        drawWord(c, text, wx, wy, fsize, angle, fill, useBold);
+      }
+      xCursor += w + gap;
+    }
+  }
+  return c;
+}
+
+/* ==========================================================================
+   6. SCLERA TYPOGRAPHY (inside the eye)
+   ========================================================================== */
+function buildScleraLayer(g, rng, palette) {
+  const c = newCanvas(g.canvasW, g.canvasH);
+  const ctx = cx(c);
+
+  // Filled eye polygon background
+  const N = 96;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const u = -1 + (2 * i) / N;
+    const x = g.centerX + u * g.eyeHalfW;
+    const y = g.centerY + evalEyelid(u, 1.0, g).upper;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  for (let i = N; i >= 0; i--) {
+    const u = -1 + (2 * i) / N;
+    const x = g.centerX + u * g.eyeHalfW;
+    const y = g.centerY + evalEyelid(u, 1.0, g).lower;
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "rgba(6,11,22,0.98)";
+  ctx.fill();
+
+  const rows = 28;
+  for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
+    const vFrac = (rowIdx + 0.5) / rows;
+    const fsize = Math.max(9, (10.2 + 3.6 * Math.sin(vFrac * Math.PI)) * g.scale);
+    let uCursor = -0.97 + rng.range(0, 0.025);
+    const bold = rowIdx % 4 === 0;
+
+    while (uCursor < 0.97) {
+      const mode = Math.abs(uCursor) > 0.74 ? "short" : "mixed";
+      const quote = generateMeaningfulQuote(rng, mode);
+      const m = measureText(c, quote, fsize, bold);
+      const w = m.width;
+      const du = (w + 8 * g.scale) / g.eyeHalfW;
+      const uMid = uCursor + du * 0.5;
+      if (uMid > 0.97) break;
+
+      const yu = evalEyelid(uMid, 1.0, g).upper;
+      const yl = evalEyelid(uMid, 1.0, g).lower;
+      if (yl - yu < fsize * 0.75) { uCursor += du * 0.65; continue; }
+
+      const wyRel = yu + vFrac * (yl - yu);
+      const wxRel = uMid * g.eyeHalfW;
+
+      const y0 = evalEyelid(uMid - 0.025, 1.0, g).upper + vFrac * (evalEyelid(uMid-0.025,1.0,g).lower - evalEyelid(uMid-0.025,1.0,g).upper);
+      const y2 = evalEyelid(uMid + 0.025, 1.0, g).upper + vFrac * (evalEyelid(uMid+0.025,1.0,g).lower - evalEyelid(uMid+0.025,1.0,g).upper);
+      const slope = (y2 - y0) / (0.05 * g.eyeHalfW);
+      const angle = -(Math.atan(slope) * 180) / Math.PI;
+
+      const dx = Math.abs(uMid), dyv = Math.abs(vFrac - 0.52) * 1.7;
+      const sphereShade = Math.max(0.38, Math.min(1, 1.16 - 0.62 * Math.pow(dx, 1.55) - 0.22 * Math.pow(dyv, 1.5)));
+      const lidShadow = Math.min(1, 0.56 + 0.70 * vFrac);
+      const brightness = sphereShade * lidShadow;
+      const base = hexToRgb(rng.choice(palette.sclera_colors));
+      const fill = `rgba(${Math.min(255, base[0]*brightness|0)},${Math.min(255, base[1]*brightness|0)},${Math.min(255, base[2]*brightness|0)},${Math.min(1, 0.80 + 0.20*brightness)})`;
+      drawWord(c, quote, g.centerX + wxRel, g.centerY + wyRel, fsize, angle, fill, bold);
+      uCursor += du;
+    }
+  }
+  return c;
+}
+
+// Mask canvas: solid white center circle, transparent outside, blurred edge
+function buildIrisCutoutMask(g) {
+  const dim = Math.round(g.irisRadius * 2.25);
+  const c = newCanvas(dim, dim);
+  const ctx = cx(c);
+  const r = g.irisRadius * 0.97;
+  const cc = dim / 2;
+  ctx.filter = `blur(${Math.max(3, 7 * g.scale)}px)`;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(cc, cc, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.filter = "none";
+  return c;
+}
+
+/* ==========================================================================
+   7. IRIS, PUPIL, HIGHLIGHTS
+   ========================================================================== */
+function buildIrisLayers(g, rng, palette) {
+  let dim = Math.round(g.irisRadius * 2.38);
+  if (dim % 2) dim++;
+  const icx = dim / 2, icy = dim / 2;
+
+  const ringsA = newCanvas(dim, dim);
+  const ringsB = newCanvas(dim, dim);
+  for (const cv of [ringsA, ringsB]) {
+    const ctx = cx(cv);
+    ctx.fillStyle = "rgba(5,10,22,0.96)";
+    ctx.beginPath();
+    ctx.arc(icx, icy, g.irisRadius * 0.98, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Concentric rings
+  const N_RINGS = 15;
+  for (let ri = 0; ri < N_RINGS; ri++) {
+    const rFrac = 0.96 - (ri / (N_RINGS - 1)) * (0.96 - 0.37);
+    const rad = g.irisRadius * rFrac;
+    const fsize = Math.max(8, (8.8 + (1 - rFrac) * 4.2) * g.scale);
+    const bold = ri % 3 === 0;
+    let theta = rng.range(0, Math.PI * 2);
+    const thetaEnd = theta + Math.PI * 2 - 0.03;
+
+    while (theta < thetaEnd) {
+      let word = generateMeaningfulQuote(rng, rFrac < 0.58 ? "short" : "mixed");
+      if (word.length > 22) word = generateMeaningfulQuote(rng, "short");
+      const m = measureText(ringsA, word, fsize, bold);
+      const dTheta = (m.width + 6 * g.scale) / Math.max(24, rad);
+      const thetaMid = theta + dTheta * 0.5;
+      if (thetaMid > thetaEnd) break;
+
+      const wx = icx + rad * Math.cos(thetaMid);
+      const wy = icy + rad * Math.sin(thetaMid);
+      let degT = -(thetaMid * 180) / Math.PI - 90;
+      const mod = ((degT % 360) + 360) % 360;
+      if (mod > 90 && mod < 270) degT += 180;
+
+      let colA, colB, alpha;
+      if (rFrac > 0.84) { colA = rng.choice(palette.iris_outer); colB = rng.choice(palette.iris_mid); alpha = 0.97; }
+      else if (rFrac > 0.48) { colA = rng.choice(palette.iris_mid); colB = rng.choice(palette.iris_alt); alpha = 0.99; }
+      else { colA = rng.choice(palette.iris_inner); colB = rng.choice(palette.iris_alt); alpha = 1.0; }
+
+      drawWord(ringsA, word, wx, wy, fsize, degT, rgba(colA, alpha), bold);
+      drawWord(ringsB, word, wx, wy, fsize, degT, rgba(colB, alpha), bold);
+      theta += dTheta;
+    }
+  }
+
+  // Radial spokes
+  const radialA = newCanvas(dim, dim);
+  const radialB = newCanvas(dim, dim);
+  const N_SPOKES = 84;
+  for (let si = 0; si < N_SPOKES; si++) {
+    const theta = (si / N_SPOKES) * Math.PI * 2 + rng.range(-0.015, 0.015);
+    const rBand = rng.range(0.46, 0.84);
+    const rad = g.irisRadius * rBand;
+    const wx = icx + rad * Math.cos(theta);
+    const wy = icy + rad * Math.sin(theta);
+    let degR = -(theta * 180) / Math.PI;
+    const mod = ((degR % 360) + 360) % 360;
+    if (mod > 90 && mod < 270) degR += 180;
+
+    const word = generateMeaningfulQuote(rng, "short");
+    const fsize = Math.max(8, rng.range(8.2, 11.0) * g.scale);
+    const colA = rng.choice(rBand < 0.60 ? palette.iris_inner : palette.iris_mid);
+    const colB = rng.choice(palette.iris_alt);
+    const alpha = rng.range(0.65, 0.88);
+    drawWord(radialA, word, wx, wy, fsize, degR, rgba(colA, alpha));
+    drawWord(radialB, word, wx, wy, fsize, degR, rgba(colB, alpha));
+  }
+
+  // Clear pupil hole on all iris layers
+  const pr = g.pupilRadius * 0.98;
+  for (const cv of [ringsA, ringsB, radialA, radialB]) {
+    const ctx = cx(cv);
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(icx, icy, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Glow layer (blurred ringsA copy)
+  const glow = newCanvas(dim, dim);
+  const gctx = cx(glow);
+  gctx.filter = `blur(${Math.max(4, 10 * g.scale)}px)`;
+  gctx.drawImage(ringsA, 0, 0);
+  gctx.filter = "none";
+
+  // Pupil
+  let pDim = Math.round(g.pupilRadius * 2.45);
+  if (pDim % 2) pDim++;
+  const pupilC = newCanvas(pDim, pDim);
+  const pctx = cx(pupilC);
+  pctx.fillStyle = "rgba(3,5,11,0.99)";
+  pctx.beginPath();
+  pctx.arc(pDim/2, pDim/2, g.pupilRadius * 0.97, 0, Math.PI*2);
+  pctx.fill();
+  for (const pFrac of [0.88, 0.72, 0.56, 0.40, 0.24]) {
+    const radP = g.pupilRadius * pFrac;
+    const fsize = Math.max(7, (8.2 + (1 - pFrac) * 1.8) * g.scale);
+    let th = rng.range(0, Math.PI * 2);
+    const thEnd = th + Math.PI * 2 - 0.06;
+    while (th < thEnd) {
+      const word = generateMeaningfulQuote(rng, "pupil");
+      const m = measureText(pupilC, word, fsize, false);
+      const dTh = Math.max(0.32, (m.width + 4.5 * g.scale) / Math.max(12, radP));
+      const thMid = th + dTh * 0.5;
+      if (thMid > thEnd) break;
+      const wx = pDim/2 + radP * Math.cos(thMid);
+      const wy = pDim/2 + radP * Math.sin(thMid);
+      let deg = -(thMid * 180) / Math.PI - 90;
+      const mod = ((deg % 360) + 360) % 360;
+      if (mod > 90 && mod < 270) deg += 180;
+      const base = hexToRgb(rng.choice(palette.pupil_words));
+      const fill = `rgb(${Math.min(255, base[0]+26)},${Math.min(255, base[1]+40)},${Math.min(255, base[2]+68)})`;
+      drawWord(pupilC, word, wx, wy, fsize, deg, fill, false);
+      th += dTh;
+    }
+  }
+
+  // ★ SIGNATURE — anchored at the exact center of the pupil
+  drawWord(pupilC, SIGNATURE_NAME,
+           pDim/2, pDim/2, Math.max(10, 11.5 * g.scale), 0, "rgba(150,190,240,1)", true);
+
+  // Highlights
+  const hl = newCanvas(dim, dim);
+  const hl1x = icx - g.irisRadius * 0.34;
+  const hl1y = icy - g.irisRadius * 0.32;
+  for (let row = -2; row <= 2; row++) {
+    for (let col = -1; col <= 1; col++) {
+      const word = generateMeaningfulQuote(rng, "highlight");
+      const fsize = Math.max(8, (10.5 - Math.abs(row) * 0.5) * g.scale);
+      const colHex = rng.choice(palette.highlight_words);
+      const dx = col * 34 * g.scale, dy = row * 14 * g.scale;
+      const rad = -24 * Math.PI / 180;
+      const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+      const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+      const a = Math.max(0.76, 1 - (Math.abs(row) * 18 + Math.abs(col) * 16) / 255);
+      drawWord(hl, word, hl1x + rx, hl1y + ry, fsize, -24, rgba(colHex, a), true);
+    }
+  }
+  const hl2x = icx + g.irisRadius * 0.36;
+  const hl2y = icy + g.irisRadius * 0.35;
+  for (let k = -2; k <= 2; k++) {
+    const word = generateMeaningfulQuote(rng, "highlight");
+    const fsize = Math.max(7, 9.0 * g.scale);
+    const colHex = rng.choice(palette.highlight_words);
+    const dx = k * 28 * g.scale, dy = -Math.abs(k) * 3.5 * g.scale;
+    const rad = -28 * Math.PI / 180;
+    const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+    drawWord(hl, word, hl2x + rx, hl2y + ry, fsize, -28, rgba(colHex, 0.88), true);
+  }
+
+  return { ringsA, ringsB, radialA, radialB, pupil: pupilC, glow, highlights: hl, dim };
+}
+
+/* ==========================================================================
+   8. ANIMATED EYELID RIM WORDS
+   ========================================================================== */
+function buildEyelidRimWords(g, rng, palette) {
+  const words = [];
+  const N = 160;
+  const us = [];
+  const dxGrid = ((2.04 / (N - 1)) * g.eyeHalfW);
+  for (let i = 0; i < N; i++) us.push(-1.02 + (i / (N - 1)) * 2.04);
+
+  const evalAt = (u, op) => evalEyelid(Math.max(-1, Math.min(1, u)), op, g);
+  function slopes(op) {
+    const ys = us.map(u => evalAt(u, op));
+    const up = [], lo = [];
+    for (let i = 0; i < N; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1);
+      const dyU = (ys[b].upper - ys[a].upper);
+      const dyL = (ys[b].lower - ys[a].lower);
+      const ddx = (us[b] - us[a]) * g.eyeHalfW;
+      up.push(dyU / ddx); lo.push(dyL / ddx);
+    }
+    return { up, lo };
+  }
+  const sOpen = slopes(1.0), sMid = slopes(0.45), sClosed = slopes(0.0);
+
+  function buildStream(isUpper, vOff, fsize) {
+    let uCur = -0.98 + rng.range(0, 0.02);
+    while (uCur < 0.98) {
+      let phrase = generateMeaningfulQuote(rng, Math.abs(uCur) > 0.65 ? "short" : "mixed");
+      if (phrase.length > 22) phrase = generateMeaningfulQuote(rng, "short");
+      const m = measureText(document.createElement("canvas"), phrase, fsize, true);
+      const idxEst = Math.max(0, Math.min(N - 1, Math.round(((uCur + 1.02) / 2.04) * (N - 1))));
+      const localSlope = isUpper ? sOpen.up[idxEst] : sOpen.lo[idxEst];
+      const cosT = 1 / Math.sqrt(1 + localSlope * localSlope);
+      const du = ((m.width + 12 * g.scale) * Math.max(0.65, cosT)) / g.eyeHalfW;
+      const uMid = uCur + du * 0.5;
+      if (uMid > 0.98) break;
+      const idx = Math.max(0, Math.min(N - 1, Math.round(((uMid + 1.02) / 2.04) * (N - 1))));
+      const aOpen = isUpper ? -Math.atan(sOpen.up[idx]) * 180/Math.PI : -Math.atan(sOpen.lo[idx]) * 180/Math.PI;
+      const aMid  = isUpper ? -Math.atan(sMid.up[idx])*180/Math.PI : -Math.atan(sMid.lo[idx])*180/Math.PI;
+      const aClosed = isUpper ? -Math.atan(sClosed.up[idx])*180/Math.PI : -Math.atan(sClosed.lo[idx])*180/Math.PI;
+
+      const colHex = rng.choice(palette.eyelid_rim);
+      const edgeAtten = Math.max(0.45, 1 - 0.50 * Math.pow(Math.abs(uMid), 2.4));
+      const alpha = 0.98 * edgeAtten;
+
+      words.push({
+        u: uMid, vOffset: vOff, isUpper,
+        surfaces: [
+          createWordSprite(phrase, fsize, aClosed, rgba(colHex, alpha), true),
+          createWordSprite(phrase, fsize, aMid,    rgba(colHex, alpha), true),
+          createWordSprite(phrase, fsize, aOpen,   rgba(colHex, alpha), true)
+        ]
+      });
+      uCur += du;
+    }
+  }
+
+  // ★ SIGNATURE — pinned once onto the upper eyelid rim (bright, bold, larger)
+  const sigFsize = Math.max(11, 14 * g.scale);
+  const sigU = -0.35;
+  const sigIdx = Math.max(0, Math.min(N - 1, Math.round(((sigU + 1.02) / 2.04) * (N - 1))));
+  const sigCol = palette.eyelid_rim[0];
+  words.push({
+    u: sigU, vOffset: -9 * g.scale, isUpper: true,
+    surfaces: [
+      createWordSprite(SIGNATURE_NAME, sigFsize, -Math.atan(sClosed.up[sigIdx]) * 180/Math.PI, rgba(sigCol, 1.0), true),
+      createWordSprite(SIGNATURE_NAME, sigFsize, -Math.atan(sMid.up[sigIdx])    * 180/Math.PI, rgba(sigCol, 1.0), true),
+      createWordSprite(SIGNATURE_NAME, sigFsize, -Math.atan(sOpen.up[sigIdx])   * 180/Math.PI, rgba(sigCol, 1.0), true)
+    ]
+  });
+
+  buildStream(true,  -9 * g.scale, Math.max(10, 12.2 * g.scale));
+  buildStream(false, +9 * g.scale, Math.max(10, 11.6 * g.scale));
+  return words;
+}
+
+/* ==========================================================================
+   9. APP
+   ========================================================================== */
+class EyeApp {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.paletteIdx = 0;
+    this.seed = 100000 + Math.floor(Math.random() * 900000);
+    this.showHelp = false;
+    this.autoBlink = true;
+    this.autoZoom = true;
+
+    // Camera state
+    this.zoom = 1.0;
+    this.zoomPhase = 0;
+    this.panX = 0; this.panY = 0;
+    this.gazeX = 0; this.gazeY = 0;
+    this.lastMouse = [0, 0];
+    this.lastMouseTime = 0;
+    this.mouse = [0, 0];
+
+    // Blink state machine
+    this.blinking = false;
+    this.blinkStart = 0;
+    this.closeDur = 0.13;
+    this.holdDur = 0.045;
+    this.openDur = 0.23;
+    this.queuedDouble = false;
+    this.nextBlinkTime = performance.now() / 1000 + 2.5 + Math.random() * 2;
+
+    this.resize();
+    this.bindEvents();
+    this.lastTime = performance.now() / 1000;
+    this.frame = this.frame.bind(this);
+    requestAnimationFrame(this.frame);
+  }
+
+  resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.round(window.innerWidth * dpr);
+    const h = Math.round(window.innerHeight * dpr);
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.dpr = dpr;
+    this.build();
+  }
+
+  build() {
+    const t0 = performance.now();
+    this.geom = calcGeometry(this.canvas.width, this.canvas.height);
+    const g = this.geom;
+    const rng = makeRNG(this.seed);
+    const palette = PALETTES[this.paletteIdx];
+
+    this.fieldLayer = buildFieldLayer(g, rng, palette);
+    this.scleraLayer = buildScleraLayer(g, rng, palette);
+    this.irisMask = buildIrisCutoutMask(g);
+    this.iris = buildIrisLayers(g, rng, palette);
+    this.rimWords = buildEyelidRimWords(g, rng, palette);
+
+    // Precompute eye box
+    const boxW = Math.round(g.eyeHalfW * 2.25);
+    const boxH = Math.round(g.eyeHalfH * 2.65);
+    this.eyeBox = {
+      x: Math.round(g.centerX - boxW / 2),
+      y: Math.round(g.centerY - boxH / 2),
+      w: boxW, h: boxH
+    };
+    this.eyeBoxCanvas = newCanvas(boxW, boxH);
+    this.eyeBoxMask = newCanvas(boxW, boxH);
+
+    // Virtual frame canvas
+    this.virtual = newCanvas(g.canvasW, g.canvasH);
+
+    // U grid for lid mask
+    this.maskU = [];
+    for (let i = 0; i < 96; i++) this.maskU.push(-1.01 + (i / 95) * 2.02);
+
+    console.log(`[eye] built in ${(performance.now() - t0).toFixed(0)}ms — palette: ${palette.name} — ✦ ${SIGNATURE_NAME}`);
+    this.updateHelpPanel();
+  }
+
+  bindEvents() {
+    window.addEventListener("resize", () => this.resize());
+
+    window.addEventListener("mousemove", (e) => {
+      const dpr = this.dpr;
+      this.mouse = [e.clientX * dpr, e.clientY * dpr];
+    });
+
+    window.addEventListener("keydown", (e) => {
+      const now = performance.now() / 1000;
+      switch (e.key) {
+        case "Escape": window.close(); break;
+        case " ":
+          e.preventDefault();
+          this.triggerBlink(now, false);
+          break;
+        case "b": case "B": this.autoBlink = !this.autoBlink; this.updateHelpPanel(); break;
+        case "z": case "Z": this.autoZoom = !this.autoZoom; this.updateHelpPanel(); break;
+        case "c": case "C": this.paletteIdx = (this.paletteIdx + 1) % PALETTES.length; this.build(); break;
+        case "r": case "R": this.seed = 100000 + Math.floor(Math.random() * 900000); this.build(); break;
+        case "h": case "H":
+          this.showHelp = !this.showHelp;
+          document.getElementById("panel").style.display = this.showHelp ? "block" : "none";
+          this.updateHelpPanel();
+          break;
+      }
+    });
+  }
+
+  updateHelpPanel() {
+    const panel = document.getElementById("panel");
+    if (!this.showHelp) return;
+    const p = PALETTES[this.paletteIdx];
+    panel.innerHTML = `
+      <h1>THE EYE WITHIN WORDS — by ${SIGNATURE_NAME}</h1>
+      <div class="dim">Palette: ${p.name}</div>
+      <div class="dim">Zoom: ${this.zoom.toFixed(2)}× (${this.autoZoom ? "AUTO" : "LOCKED"}) · Blink: ${this.autoBlink ? "AUTO" : "MANUAL"}</div>
+      <div style="height:8px"></div>
+      <div><span class="k">SPACE</span>Trigger an immediate blink</div>
+      <div><span class="k">B</span>Enable / disable automatic blinking</div>
+      <div><span class="k">Z</span>Toggle automatic camera zooming</div>
+      <div><span class="k">C</span>Change the color palette</div>
+      <div><span class="k">R</span>Regenerate arrangement of quotes</div>
+      <div><span class="k">H</span>Show / hide keyboard instructions</div>
+      <div><span class="k">ESC</span>Close the animation safely</div>
+    `;
+  }
+
+  triggerBlink(now, allowDouble) {
+    this.blinking = true;
+    this.blinkStart = now;
+    this.closeDur = 0.115 + Math.random() * 0.025;
+    this.holdDur = 0.038 + Math.random() * 0.020;
+    this.openDur = 0.200 + Math.random() * 0.060;
+    this.queuedDouble = allowDouble && Math.random() < 0.24;
+    this.nextBlinkTime = now + 3 + Math.random() * 3;
+  }
+
+  updateBlink(now) {
+    if (this.autoBlink && !this.blinking && now >= this.nextBlinkTime) {
+      this.triggerBlink(now, true);
+    }
+    if (!this.blinking) return 1.0;
+    const elapsed = now - this.blinkStart;
+    const total = this.closeDur + this.holdDur + this.openDur;
+    if (elapsed < 0) return 1.0;
+    if (elapsed < this.closeDur) {
+      const u = elapsed / this.closeDur;
+      const ease = 3 * u * u - 2 * u * u * u;
+      return Math.max(0, 1 - ease);
+    } else if (elapsed < this.closeDur + this.holdDur) {
+      return 0;
+    } else if (elapsed < total) {
+      const u = (elapsed - this.closeDur - this.holdDur) / this.openDur;
+      const ease = 1 - Math.pow(1 - u, 2.6);
+      return Math.min(1, ease);
+    } else {
+      if (this.queuedDouble) {
+        this.queuedDouble = false;
+        this.triggerBlink(now + 0.045, false);
+      } else {
+        this.blinking = false;
+      }
+      return 1.0;
+    }
+  }
+
+  updateCamera(now, dt) {
+    const g = this.geom;
+    const [mx, my] = this.mouse;
+    if (mx !== this.lastMouse[0] || my !== this.lastMouse[1]) {
+      this.lastMouse = [mx, my];
+      this.lastMouseTime = now;
+    }
+    const maxGx = g.screenW * 0.022;
+    const maxGy = g.screenH * 0.018;
+    let tx, ty;
+    if (now - this.lastMouseTime < 4.5) {
+      const nx = (mx - g.screenW * 0.5) / Math.max(1, g.screenW * 0.5);
+      const ny = (my - g.screenH * 0.5) / Math.max(1, g.screenH * 0.5);
+      tx = Math.max(-1, Math.min(1, nx)) * maxGx;
+      ty = Math.max(-1, Math.min(1, ny)) * maxGy;
+    } else {
+      tx = Math.sin(now * 0.45) * Math.cos(now * 0.21) * maxGx * 0.45;
+      ty = Math.sin(now * 0.32 + 1.1) * maxGy * 0.40;
+    }
+    const smooth = Math.min(1, dt * 5.5);
+    this.gazeX += (tx - this.gazeX) * smooth;
+    this.gazeY += (ty - this.gazeY) * smooth;
+
+    if (this.autoZoom) {
+      const speed = 0.34 + 0.08 * Math.sin(now * 0.17);
+      this.zoomPhase += dt * speed;
+      const raw = 0.5 - 0.5 * Math.cos(this.zoomPhase);
+      const eased = raw * raw * (3 - 2 * raw);
+      this.zoom = 1.0 + eased * 1.55;
+    } else {
+      this.zoom += (1.0 - this.zoom) * Math.min(1, dt * 4);
+    }
+
+    const baseVW = g.canvasW * 0.82, baseVH = g.canvasH * 0.82;
+    let viewW = Math.round(baseVW / this.zoom);
+    let viewH = Math.round(baseVH / this.zoom);
+    viewW = Math.max(320, Math.min(g.canvasW, viewW));
+    viewH = Math.max(200, Math.min(g.canvasH, viewH));
+
+    const zoomFactor = (this.zoom - 1) / 1.55;
+    const driftRX = g.eyeHalfW * 0.30 * zoomFactor;
+    const driftRY = g.eyeHalfH * 0.25 * zoomFactor;
+    const targetPx = Math.sin(now * 0.23) * driftRX + this.gazeX * 1.4;
+    const targetPy = Math.cos(now * 0.19) * driftRY + this.gazeY * 1.4;
+    this.panX += (targetPx - this.panX) * Math.min(1, dt * 3.5);
+    this.panY += (targetPy - this.panY) * Math.min(1, dt * 3.5);
+
+    const camCx = Math.round(g.centerX + this.panX);
+    const camCy = Math.round(g.centerY + this.panY);
+    const left = Math.max(0, Math.min(g.canvasW - viewW, camCx - Math.floor(viewW / 2)));
+    const top  = Math.max(0, Math.min(g.canvasH - viewH, camCy - Math.floor(viewH / 2)));
+
+    return { x: left, y: top, w: viewW, h: viewH };
+  }
+
+  renderEyeBox(openness, gazeX, gazeY, now) {
+    const g = this.geom;
+    const box = this.eyeBox;
+    const bc = cx(this.eyeBoxCanvas);
+    const bcv = this.eyeBoxCanvas;
+    bc.clearRect(0, 0, bcv.width, bcv.height);
+
+    const localCx = g.centerX - box.x;
+    const localCy = g.centerY - box.y;
+
+    const scleraDx = Math.round(gazeX * 0.25);
+    const scleraDy = Math.round(gazeY * 0.22);
+    bc.drawImage(this.scleraLayer, -box.x + scleraDx, -box.y + scleraDy);
+
+    const irisCx = localCx + Math.round(gazeX);
+    const irisCy = localCy + Math.round(gazeY) - Math.round(g.eyeHalfH * 0.04);
+
+    // Cutout mask so sclera words don't bleed behind the iris
+    bc.save();
+    bc.globalCompositeOperation = "destination-out";
+    bc.drawImage(this.irisMask, irisCx - this.irisMask.width / 2, irisCy - this.irisMask.height / 2);
+    bc.restore();
+
+    // Glow (additive)
+    bc.save();
+    bc.globalCompositeOperation = "lighter";
+    bc.globalAlpha = 0.40 + 0.12 * Math.sin(now * 1.2);
+    bc.drawImage(this.iris.glow, irisCx - this.iris.dim/2, irisCy - this.iris.dim/2);
+    bc.globalAlpha = 1;
+    bc.restore();
+
+    // Rings A (full) + Rings B (crossfade)
+    const mix = 0.5 + 0.5 * Math.sin(now * 0.60);
+    bc.drawImage(this.iris.ringsA, irisCx - this.iris.dim/2, irisCy - this.iris.dim/2);
+    bc.save();
+    bc.globalAlpha = mix;
+    bc.drawImage(this.iris.ringsB, irisCx - this.iris.dim/2, irisCy - this.iris.dim/2);
+    bc.restore();
+
+    // Radial spokes (breathing scale)
+    const rScale = 1 + 0.025 * Math.sin(now * 1.3);
+    const rw = Math.round(this.iris.dim * rScale);
+    bc.save();
+    bc.globalAlpha = 0.90;
+    bc.drawImage(this.iris.radialA, irisCx - rw/2, irisCy - rw/2, rw, rw);
+    bc.globalAlpha = 0.90 * mix;
+    bc.drawImage(this.iris.radialB, irisCx - rw/2, irisCy - rw/2, rw, rw);
+    bc.restore();
+
+    // Pupil
+    const pScale = 1 + 0.055 * Math.sin(now * 0.92) + 0.035 * (1 - openness);
+    const pDim = Math.round(this.iris.pupil.width * pScale);
+    bc.drawImage(this.iris.pupil, irisCx - pDim/2, irisCy - pDim/2, pDim, pDim);
+
+    // Highlights
+    bc.drawImage(this.iris.highlights,
+                 localCx + Math.round(gazeX*1.16) - this.iris.dim/2,
+                 localCy + Math.round(gazeY*1.16) - Math.round(g.eyeHalfH*0.04) - this.iris.dim/2);
+
+    // Eyelid mask (clip to instantaneous lid shape)
+    const maskCtx = cx(this.eyeBoxMask);
+    maskCtx.clearRect(0, 0, this.eyeBoxMask.width, this.eyeBoxMask.height);
+    const lidGazeY = gazeY * 0.20 * openness;
+    maskCtx.beginPath();
+    for (let i = 0; i < this.maskU.length; i++) {
+      const u = this.maskU[i];
+      const e = evalEyelid(u, openness, g);
+      const x = localCx + u * g.eyeHalfW;
+      const y = localCy + e.upper + lidGazeY;
+      if (i === 0) maskCtx.moveTo(x, y); else maskCtx.lineTo(x, y);
+    }
+    for (let i = this.maskU.length - 1; i >= 0; i--) {
+      const u = this.maskU[i];
+      const e = evalEyelid(u, openness, g);
+      const x = localCx + u * g.eyeHalfW;
+      const y = localCy + e.lower + lidGazeY;
+      maskCtx.lineTo(x, y);
+    }
+    maskCtx.closePath();
+    maskCtx.fillStyle = "#fff";
+    maskCtx.fill();
+
+    bc.save();
+    bc.globalCompositeOperation = "destination-in";
+    bc.drawImage(this.eyeBoxMask, 0, 0);
+    bc.restore();
+  }
+
+  render(openness, camRect, gazeX, gazeY, now) {
+    const g = this.geom;
+    const v = cx(this.virtual);
+
+    // 1. Full-canvas field
+    v.clearRect(0, 0, g.canvasW, g.canvasH);
+    v.drawImage(this.fieldLayer, 0, 0);
+
+    // 2. Eye interior
+    if (openness > 0.012) {
+      this.renderEyeBox(openness, gazeX, gazeY, now);
+      v.drawImage(this.eyeBoxCanvas, this.eyeBox.x, this.eyeBox.y);
+    }
+
+    // 3. Eyelid rim words
+    const angleIdx = openness < 0.22 ? 0 : openness < 0.68 ? 1 : 2;
+    const lidGazeY = gazeY * 0.20 * openness;
+    for (const w of this.rimWords) {
+      const surf = w.surfaces[angleIdx];
+      const e = evalEyelid(w.u, openness, g);
+      const wx = g.centerX + w.u * g.eyeHalfW;
+      const baseY = w.isUpper ? e.upper : e.lower;
+      const wy = g.centerY + baseY + lidGazeY + w.vOffset;
+      v.drawImage(surf, Math.round(wx) - (surf.width >> 1), Math.round(wy) - (surf.height >> 1));
+    }
+
+    // 4. Camera zoom: draw cropped region of virtual to screen
+    const s = this.ctx;
+    s.imageSmoothingEnabled = true;
+    s.imageSmoothingQuality = "high";
+    s.drawImage(this.virtual,
+                camRect.x, camRect.y, camRect.w, camRect.h,
+                0, 0, g.screenW, g.screenH);
+
+    // 5. Signature watermark — always visible, unaffected by camera
+    this.drawSignature(s, g, now);
+  }
+
+  drawSignature(ctx, g, now) {
+    const pal = PALETTES[this.paletteIdx];
+    const dpr = this.dpr || 1;
+    const size = Math.max(11, 13 * dpr);
+    const margin = Math.max(18, 22 * dpr);
+    const pulse = 0.5 + 0.5 * Math.sin(now * 1.4);
+    const alpha = 0.55 + 0.35 * pulse;
+    const [r, gg, b] = hexToRgb(pal.accent);
+
+    ctx.save();
+    ctx.font = `italic 400 ${size}px Optima, "Helvetica Neue", Arial, sans-serif`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "bottom";
+
+    const text = SIGNATURE_NAME;
+    const tx = g.screenW - margin;
+    const ty = g.screenH - margin;
+
+    // Soft glow shadow
+    ctx.shadowColor = `rgba(${r},${gg},${b},${0.6 * alpha})`;
+    ctx.shadowBlur = 12 * dpr;
+    ctx.fillStyle = `rgba(${r},${gg},${b},${alpha})`;
+    ctx.fillText(text, tx, ty);
+
+    // A tiny line under it
+    const m = ctx.measureText(text);
+    ctx.shadowBlur = 0;
+    ctx.fillRect(tx - m.width, ty + 3 * dpr, m.width, 1 * dpr);
+
+    ctx.restore();
+  }
+
+  frame(ms) {
+    const now = ms / 1000;
+    const dt = Math.min(0.05, Math.max(0.001, now - this.lastTime));
+    this.lastTime = now;
+
+    const openness = this.updateBlink(now);
+    const camRect = this.updateCamera(now, dt);
+    this.render(openness, camRect, this.gazeX, this.gazeY, now);
+
+    if (this.showHelp) this.updateHelpPanel();
+    requestAnimationFrame(this.frame);
+  }
+}
+
+// BOOT
+window.addEventListener("load", () => {
+  const app = new EyeApp(document.getElementById("c"));
+  window.__eye = app; // for debugging
+});
+</script>
+</body>
+</html>
